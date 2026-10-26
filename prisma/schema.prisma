@@ -1,0 +1,172 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Invitation {
+  id               String   @id @default(cuid())
+  email            String
+  token            String   @unique
+  expiresAt        DateTime
+  usedAt           DateTime?
+  createdAt        DateTime @default(now())
+  isAdmin          Boolean  @default(false)
+  // Relations
+  createdBy        User     @relation("InvitationsCreated", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  createdByUserId  String
+
+  @@index([email])
+  @@map("invitations")
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AgreementType {
+  SOW
+  MSA
+}
+
+enum TaxIdentificationType {
+  VAT
+  FISCAL_ID
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  isAdmin   Boolean  @default(false)
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  projects  Project[]
+  invitationsCreated Invitation[] @relation("InvitationsCreated")
+  currencyAccounts   CurrencyAccount[]
+
+  @@map("users")
+}
+
+model Project {
+  id              String    @id @default(cuid())
+  name            String
+  isCopy          Boolean   @default(false)
+  originalProjectId String?
+  description     String?
+  uniqueProjectIdentifier String? @unique
+  customerName    String
+  customerAddress String
+  contactPerson   String
+  email           String
+  phoneNumber     String?
+  agreementType   AgreementType @default(SOW)
+  agreementRef    String?
+  poNumber        String?
+  invoicePurpose  String
+  currency        String    @default("EUR")
+  // Persisted work period label like "March 2025"; independent from invoiceDate
+  workPeriod      String?
+  taxIdentificationType TaxIdentificationType? @default(VAT)
+  taxNumber       String? @default("")
+  status          String    @default("active")
+  paymentDueDays  Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  // Import metadata
+  lastImportedAt  DateTime?
+  lastImportedTab String?
+  lastImportedEmployeeCount Int?
+  lastImportedInvoiceDate DateTime?
+
+  // Relations
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String
+  employees       Employee[]
+  genericExcelUploads GenericExcelUpload[]
+
+  @@map("projects")
+}
+
+model GenericExcelUpload {
+  id        String   @id @default(cuid())
+  projectId String
+  fileName  String?
+  sheetName String
+  headers   Json
+  rows      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("generic_excel_uploads")
+}
+
+model Employee {
+  id            String   @id @default(cuid())
+  name          String
+  ratePerHour   Float
+  hours         Float
+  total         Float
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId     String
+
+  @@map("employees")
+}
+
+model Company {
+  id          String   @id @default(cuid())
+  name        String
+  address     String
+  cinNumber   String?
+  gstNumber   String?
+  ifscCode    String?
+  bankName    String?
+  bankAddress String?
+  swiftCode   String?
+  remittingBankName   String?
+  remittingCurrency   String?
+  remittingAccountNo  String?
+  remittingSwiftCode  String?
+  remittingIbanNo     String?
+  remittingAbaFedNo   String?
+  // Signing fields
+  signatureImage      String? // base64 data URL or external URL
+  companyStampImage   String? // base64 data URL or external URL
+  signatoryName       String?
+  signatoryDesignation String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("companies")
+}
+
+model CurrencyAccount {
+  id            String   @id @default(cuid())
+  currency      String
+  // Store the encrypted account number payload (iv:ciphertext:tag in base64)
+  encryptedData String
+  // Convenience for display/filtering without decryption
+  last4         String   @db.VarChar(4)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+
+  @@index([userId])
+  @@index([currency])
+  @@map("currency_accounts")
+}

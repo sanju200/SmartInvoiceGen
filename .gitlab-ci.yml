@@ -1,0 +1,68 @@
+default:
+  tags:
+    - shell
+
+variables:
+  APPNAME: fasttrackinvo
+  GIT_DEPTH: 0
+  DB_PORT: 5432
+  POSTGRES_USER: ${POSTGRES_USER}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  POSTGRES_DB: ${POSTGRES_DB}
+  DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:${DB_PORT}/${POSTGRES_DB}"
+
+.deploy:
+  stage: deploy
+  image: node:22
+  script:
+    - docker compose --project-name ${APPNAME}-${ENV} up --build --detach
+    - sleep 10
+    - docker exec -w /app ${APPNAME}-${ENV}-app-1 npx prisma migrate deploy
+    - |
+      if ! docker exec -w /app ${APPNAME}-${ENV}-app-1 npx prisma execute --stdin --url="${DATABASE_URL}" <<< "SELECT 1 FROM \"User\" LIMIT 1;" 2>/dev/null; then
+        echo "No users found, running seed..."
+        docker exec -w /app ${APPNAME}-${ENV}-app-1 npm run db:seed
+      else
+        echo "Database already has users, skipping seed"
+      fi
+
+deploy_to_development:
+  extends: .deploy
+  variables:
+    ENV: "dev"
+    URL: "$APPNAME-$ENV.tech"
+  environment:
+    name: $APPNAME-$ENV
+    url: https://$URL
+    deployment_tier: development
+    action: start
+    on_stop: stop_environment_development
+  rules:
+    - if: $CI_COMMIT_BRANCH == 'dev'
+
+deploy_to_production:
+  extends: .deploy
+  variables:
+    ENV: "prod"
+    URL: "$APPNAME.tech"
+  environment:
+    name: $APPNAME-$ENV
+    url: https://$URL
+    deployment_tier: production
+    action: start
+  rules:
+    - if: $CI_COMMIT_BRANCH == 'main'
+
+stop_environment_development:
+  stage: deploy
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - echo "Stopping $APPNAME-$ENV"
+    - docker compose --project-name ${APPNAME}-${ENV} down --remove-orphans --rmi all
+  environment:
+    name: $APPNAME-$ENV
+    action: stop
+  when: on_success
+  rules:
+    - if: $CI_COMMIT_BRANCH == 'dev'

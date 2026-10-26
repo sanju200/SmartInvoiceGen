@@ -1,0 +1,52 @@
+services:
+  app:
+    image: "${APPNAME}-${ENV}-app:latest"
+    build:
+      context: .
+      dockerfile: DockerFile
+      args:
+        - JWT_SECRET=${JWT_SECRET}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=${ENV}
+      - JWT_SECRET=${JWT_SECRET}
+      - DATABASE_URL=${DATABASE_URL}
+    networks:
+      - traefik-network
+      - fti-network-${ENV}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${APPNAME}-${ENV}.rule=Host(`${URL}`)"
+      - "traefik.http.routers.${APPNAME}-${ENV}.entrypoints=websecure"
+      - "traefik.http.routers.${APPNAME}-${ENV}.tls=true"
+      - "traefik.http.services.${APPNAME}-${ENV}.loadbalancer.server.port=3000"  # updated for Node server
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PORT: ${DB_PORT}
+    networks:
+      - fti-network-${ENV}
+    volumes:
+      - "/docker/${APPNAME}/${ENV}/postgres:/var/lib/postgresql/data"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  traefik-network:
+    external: true
+  fti-network-dev:
+    driver: bridge
+    internal: true
+  fti-network-prod:
+    driver: bridge
+    internal: true
